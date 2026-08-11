@@ -1,0 +1,28 @@
+commander:
+  host: "smincgs.ddns.net"  # Verifone Commander (port-forwarded DDNS)
+  port: 443
+  https: true
+  verify_ssl: false         # Commander uses a self-signed certificate
+  username: "MANAGER"
+  password: ""              # leave blank — set via env var COMMANDER_PASSWORD
+  timeout_seconds: 10
+  session_retry_attempts: 3
+
+polling:
+  price_poll_interval_seconds: 60   # how often to refresh prices from Commander
+
+mock:
+  enabled: false             # set true to run without real Commander hardware
+  grades:
+    - id: 1
+      name: "Regular"
+      cash_price: 4.499
+      credit_price: 4.699
+    - id: 2
+      name: "Super"
+      cash_price: 4.999
+      credit_price: 5.199
+    - id: 3
+      name: "Diesel"
+      cash_price: 5.899
+      credit_price: 5.899

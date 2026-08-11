@@ -1,0 +1,32 @@
+services:
+  commander-reader:
+    build: .
+    container_name: commander-reader
+    ports:
+      - "8200:8200"
+    environment:
+      - COMMANDER_HOST=${COMMANDER_HOST}
+      - COMMANDER_PORT=${COMMANDER_PORT:-443}
+      - COMMANDER_USERNAME=${COMMANDER_USERNAME:-MANAGER}
+      - COMMANDER_PASSWORD=${COMMANDER_PASSWORD}
+      - COMMANDER_VERIFY_SSL=${COMMANDER_VERIFY_SSL:-false}
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-60}
+      - SESSION_REFRESH_MINUTES=${SESSION_REFRESH_MINUTES:-25}
+      - PORT=${PORT:-8200}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DB_PATH=/app/data/history.db
+    volumes:
+      - commander_reader_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # in case Commander is reachable via the host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  commander_reader_data:
+    name: commander_reader_data

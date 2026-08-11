@@ -1,0 +1,17 @@
+# Copy to docker-compose.override.yml (docker compose picks it up
+# automatically) to customize the deployment without editing the base
+# docker-compose.yml.
+
+services:
+  commander-reader:
+    # Example: expose on a different host port, e.g. if 8200 is taken
+    # ports:
+    #   - "8201:8200"
+
+    # Example: run with host networking if the Commander unit is only
+    # reachable via a specific host NIC/route that bridge networking can't see
+    # network_mode: host
+
+    # Example: point at a different Commander unit for this deployment
+    # environment:
+    #   - COMMANDER_HOST=192.168.1.50
