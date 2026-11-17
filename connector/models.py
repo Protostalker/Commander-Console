@@ -108,6 +108,28 @@ class StatusResponse(BaseModel):
     session_token_age_seconds: float | None = None
     session_authenticated: bool = False
     error: str | None = None
+    # Circuit breaker -- see commander_client.py. locked_out=true means the
+    # poll loop has stopped attempting Commander logins entirely; fix via
+    # POST /api/credentials, which also clears this.
+    consecutive_login_failures: int = 0
+    locked_out: bool = False
+
+
+class CredentialsUpdateRequest(BaseModel):
+    """POST /api/credentials -- rotate the Commander login this service
+    uses, live, no restart. Password is required every time (never echoed
+    back); username is optional -- omit to keep the current one."""
+
+    username: str | None = None
+    password: str = Field(..., min_length=1)
+
+
+class CredentialsUpdateResponse(BaseModel):
+    ok: bool
+    username: str
+    error: str | None = Field(
+        None, description="Set if the validating login with the new credentials failed"
+    )
 
 
 class PushResponse(BaseModel):

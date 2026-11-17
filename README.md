@@ -63,8 +63,46 @@ docker compose up -d
 | POST | `/api/prices/push` | Push pending changes to dispensers |
 | POST | `/api/prices/update-and-push` | Update DB then immediately push (atomic) |
 | GET | `/api/prices/history` | Price change log |
+| POST | `/api/credentials` | Rotate the Commander login this service uses, live, no restart |
 
 Full interactive docs at `/docs` when the connector is running.
+
+## Login circuit breaker (and what to do about a stale password)
+
+The Commander unit itself locks out its own account after a handful of
+failed logins (commonly ~10) — often tied to a mandatory periodic password
+change (e.g. every 90 days). Without a safeguard, a stale `COMMANDER_PASSWORD`
+means the background price-poll loop retries login every poll cycle with no
+backoff, burning through that lockout without anyone noticing until the
+Commander itself is locked.
+
+After `COMMANDER_LOCKOUT_THRESHOLD` consecutive failed logins (default 3 —
+well under the Commander's own ~10), this service stops attempting logins
+entirely and `GET /api/status` reports `locked_out: true` plus
+`consecutive_login_failures`. To recover, after rotating the password on
+the Commander console itself:
+
+```bash
+curl -X POST http://localhost:8100/api/credentials \
+  -H "Content-Type: application/json" \
+  -d '{"password": "the-new-password"}'
+# add -H "X-API-Key: ..." too if CONFIG_API_KEY is set
+```
+
+This updates the running service immediately and persists the new
+credentials to this service's own Docker volume (`ccdata`) — never to the
+repo, `commander.yaml`, or `.env`. `username` is optional; omit it to keep
+the current one. The dashboard also has a "Commander credentials" card that
+does the same thing without the `curl`.
+
+**On password reuse:** if the Commander enforces a password-history policy
+(rejecting the last N passwords), that's very likely a PCI-DSS requirement
+on a payment-adjacent device, not an arbitrary Verifone limitation — this
+project doesn't attempt to work around it. The practical fix for running
+out of memorable passwords is to stop picking memorable ones: generate a
+fresh random password at each required rotation (the dashboard's
+credentials card has a "Generate" button for this) and hand it straight to
+the update above instead of retyping one you've used before.
 
 ## Price update flow
 

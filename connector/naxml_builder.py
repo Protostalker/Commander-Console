@@ -66,7 +66,7 @@ def build_login_body(username: str, password: str) -> str:
     Build the form-encoded login request body.
 
     Confirmed format from live GWT interception:
-      cmd=validate&user=manager&passwd=Raffik15\n\n
+      cmd=validate&user=<username>&passwd=<password>\n\n
     """
     return f"cmd=validate&user={username}&passwd={password}\n\n"
 

@@ -8,6 +8,7 @@ export default function StatusBar({ status, loading }) {
   const ageSeconds = status?.last_sync_age_seconds
   const tokenAge   = status?.session_token_age_seconds
   const authed     = status?.session_authenticated ?? false
+  const lockedOut  = status?.locked_out ?? false
 
   function formatAge(seconds) {
     if (seconds == null) return 'never'
@@ -45,6 +46,13 @@ export default function StatusBar({ status, loading }) {
             <span style={connected ? styles.connectedText : styles.errorText}>
               {connected ? 'Connected' : 'Disconnected'}
             </span>
+
+            {lockedOut && (
+              <>
+                <span style={styles.sep}>·</span>
+                <span style={styles.lockedBadge}>🔒 LOCKED OUT</span>
+              </>
+            )}
 
             {!connected && status?.error && (
               <span style={styles.errorDetail} title={status.error}>
@@ -108,6 +116,10 @@ const styles = {
   connectedText: { color: '#22c55e', fontWeight: 600 },
   errorText:     { color: '#ef4444', fontWeight: 600 },
   errorDetail:   { color: '#f87171', fontSize: 12 },
+  lockedBadge: {
+    background: '#450a0a', color: '#fca5a5', border: '1px solid #ef4444',
+    fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.5px',
+  },
   sep:           { color: '#334155', fontSize: 16 },
   dim:           { color: '#64748b' },
 }

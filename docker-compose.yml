@@ -5,6 +5,8 @@ services:
       - "8100:8100"
     environment:
       COMMANDER_PASSWORD: ${COMMANDER_PASSWORD:-}
+      COMMANDER_LOCKOUT_THRESHOLD: ${COMMANDER_LOCKOUT_THRESHOLD:-3}
+      CONFIG_API_KEY: ${CONFIG_API_KEY:-}
     volumes:
       - ./config:/app/config:ro
       - ccdata:/app/data

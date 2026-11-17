@@ -69,6 +69,7 @@ class CommanderClient:
         verify_ssl: bool = False,
         timeout: int = 10,
         session_refresh_minutes: int = 25,
+        lockout_threshold: int = 3,
     ) -> None:
         self.base_url = f"https://{host}:{port}"
         self.username = username
@@ -76,11 +77,17 @@ class CommanderClient:
         self.verify_ssl = verify_ssl
         self.timeout = timeout
         self.refresh_interval_seconds = session_refresh_minutes * 60
+        # Circuit breaker — see is_locked_out / _ensure_token below. Default
+        # 3 is deliberately well under the Commander unit's own login-attempt
+        # lockout (commonly ~10): the whole point is to stop hitting the
+        # Commander's login *before* that happens, not to race it.
+        self.lockout_threshold = lockout_threshold
 
         self._client: Optional[httpx.AsyncClient] = None
         self._token: Optional[str] = None
         self._token_at: float = 0.0
         self._last_error: Optional[str] = None
+        self._consecutive_failures: int = 0
 
     # ------------------------------------------------------------------
     # Public properties
@@ -100,6 +107,18 @@ class CommanderClient:
     def last_error(self) -> Optional[str]:
         return self._last_error
 
+    @property
+    def consecutive_login_failures(self) -> int:
+        return self._consecutive_failures
+
+    @property
+    def is_locked_out(self) -> bool:
+        """True once consecutive failed logins reach lockout_threshold. While
+        this is true, _ensure_token() refuses to even attempt a login — see
+        its docstring. Cleared by update_credentials(), never by time alone:
+        a stale password doesn't fix itself, so there's nothing to wait out."""
+        return self._consecutive_failures >= self.lockout_threshold
+
     # ------------------------------------------------------------------
     # Internal HTTP client
     # ------------------------------------------------------------------
@@ -118,7 +137,26 @@ class CommanderClient:
     # ------------------------------------------------------------------
 
     async def login(self) -> bool:
-        """POST credentials to obtain a session token. Returns True on success."""
+        """
+        POST credentials to obtain a session token. Returns True on success.
+
+        Circuit breaker: refuses to even make the HTTP request once
+        is_locked_out is true (lockout_threshold consecutive failures) —
+        every call here that reaches the Commander and fails is a failed
+        login attempt *on the Commander's own counter*, and that counter is
+        usually much stricter (and never resets itself the way ours does)
+        than anything we control. Call update_credentials() to clear this.
+        """
+        if self.is_locked_out:
+            msg = (
+                f"Commander login locked out after {self._consecutive_failures} consecutive "
+                "failures -- not attempting another login (would burn one of the Commander "
+                "unit's own remaining login attempts). Update credentials via "
+                "POST /config/credentials to resume."
+            )
+            self._last_error = msg
+            return False
+
         client = await self._get_client()
         url = f"{self.base_url}{NAXML_PATH}"
         body = f"cmd=validate&user={self.username}&passwd={self.password}\n\n"
@@ -133,12 +171,14 @@ class CommanderClient:
             msg = f"Commander login request failed: {e}"
             logger.error(msg)
             self._last_error = msg
+            self._note_login_failure()
             return False
 
         if resp.status_code != 200:
             msg = f"Commander login HTTP {resp.status_code}"
             logger.error(msg)
             self._last_error = msg
+            self._note_login_failure()
             return False
 
         token = _extract_tag(resp.text, "cookie")
@@ -146,13 +186,41 @@ class CommanderClient:
             msg = f"Commander login: no <cookie> token in response. Body: {resp.text[:300]}"
             logger.error(msg)
             self._last_error = msg
+            self._note_login_failure()
             return False
 
         self._token = token
         self._token_at = time.time()
         self._last_error = None
+        self._consecutive_failures = 0
         logger.info("Commander login succeeded -- token acquired")
         return True
+
+    def _note_login_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self.is_locked_out:
+            logger.warning(
+                "Commander login circuit breaker tripped after %d consecutive failures "
+                "(threshold %d) -- this is usually a stale/wrong password, most commonly "
+                "right after the Commander unit's required periodic password change. "
+                "No further login attempts until credentials are updated via "
+                "POST /config/credentials.",
+                self._consecutive_failures, self.lockout_threshold,
+            )
+
+    def update_credentials(self, username: Optional[str], password: str) -> None:
+        """
+        Swap in a new username/password (e.g. after rotating the password on
+        the Commander console itself) and clear the circuit breaker so the
+        next call tries again immediately. Never logs the password value.
+        """
+        if username:
+            self.username = username
+        self.password = password
+        self._consecutive_failures = 0
+        self._last_error = None
+        self._invalidate_token()
+        logger.info("Commander credentials updated (user: %s) -- lockout cleared", self.username)
 
     async def _ensure_token(self) -> str:
         needs_refresh = (

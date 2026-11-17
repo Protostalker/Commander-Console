@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from . import history
+from . import credentials_store, history
 from .cache import PriceCache
 from .commander_client import CommanderClient
 from .config import load_settings
@@ -72,19 +72,30 @@ async def lifespan(app: FastAPI):
 
     await history.init_db(settings.db_path)
 
+    # A previously saved credential update (POST /config/credentials) wins
+    # over .env -- that's the whole point: rotating the password on the
+    # Commander console itself shouldn't require editing a file and
+    # restarting the container every time.
+    username, password = settings.commander_username, settings.commander_password
+    saved = credentials_store.load(settings.db_path)
+    if saved:
+        username, password = saved
+        logger.info("Using saved Commander credentials override (user: %s)", username)
+
     client = CommanderClient(
         host=settings.commander_host,
         port=settings.commander_port,
-        username=settings.commander_username,
-        password=settings.commander_password,
+        username=username,
+        password=password,
         verify_ssl=settings.commander_verify_ssl,
         session_refresh_minutes=settings.session_refresh_minutes,
+        lockout_threshold=settings.commander_lockout_threshold,
     )
     app.state.commander_client = client
 
     logger.info(
         "commander-reader starting -- Commander at %s:%d (user: %s, READ-ONLY)",
-        settings.commander_host, settings.commander_port, settings.commander_username,
+        settings.commander_host, settings.commander_port, username,
     )
 
     background_tasks: list[asyncio.Task] = []

@@ -56,4 +56,6 @@ async def get_status(request: Request):
             client.token_age_seconds if client.is_authenticated else None
         ),
         error=client.last_error if not connected else None,
+        consecutive_login_failures=client.consecutive_login_failures,
+        locked_out=client.is_locked_out,
     )

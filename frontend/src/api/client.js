@@ -84,3 +84,15 @@ export function fetchHistory(limit = 50, offset = 0) {
 export function fetchTotals(period = 2) {
   return request(`/totals?period=${period}`)
 }
+
+/**
+ * POST /api/credentials — rotate the Commander login this service uses,
+ * live, no restart. Clears the login circuit breaker. username is
+ * optional (omit to keep the current one).
+ */
+export function updateCredentials(password, username) {
+  return request('/credentials', {
+    method: 'POST',
+    body: JSON.stringify({ password, username: username || undefined }),
+  })
+}

@@ -26,4 +26,6 @@ async def health(request: Request):
         last_price_fetch_age_seconds=cache.age_seconds(),
         poll_interval_seconds=settings.poll_interval_seconds,
         last_error=client.last_error,
+        consecutive_login_failures=client.consecutive_login_failures,
+        locked_out=client.is_locked_out,
     )

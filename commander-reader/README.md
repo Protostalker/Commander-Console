@@ -75,6 +75,7 @@ grep -rn "ufuelprices\|cfuelprices" app/   # should return nothing
 | GET | `/totals?period=` | Sales totals: `shift`, `day`, `month`, or `year` |
 | GET | `/pumps` | Per-pump/hose lifetime totals (see caveat below) |
 | GET | `/config` | Site fuel config (raw XML — schema not yet parsed) |
+| POST | `/config/credentials` | Rotate the Commander login this service uses, live, no restart |
 | GET | `/metrics` | Prometheus exposition format |
 
 Full interactive docs at `/docs`.
@@ -95,6 +96,52 @@ All via environment variables (see `.env.example`):
 | `PORT` | `8200` | Port to listen on inside the container |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 | `DB_PATH` | `/app/data/history.db` | SQLite path (set automatically in compose) |
+| `COMMANDER_LOCKOUT_THRESHOLD` | `3` | Consecutive login failures before the circuit breaker trips (see below) |
+| `CONFIG_API_KEY` | *(unset)* | If set, required as an `X-API-Key` header on `POST /config/credentials` only |
+
+## Login circuit breaker (and what to do about a stale password)
+
+The Commander unit itself locks out its own account after a handful of
+failed logins (commonly ~10) — often tied to a mandatory periodic password
+change (e.g. every 90 days). Before this existed, a stale `COMMANDER_PASSWORD`
+meant the poll loop above would retry login **every single poll cycle**
+(default every 60s) with no backoff, burning through that lockout in well
+under the lockout window without anyone noticing until the Commander itself
+was locked.
+
+Now: after `COMMANDER_LOCKOUT_THRESHOLD` consecutive failed logins (default
+3 — deliberately well under the Commander's own ~10), this service stops
+attempting logins entirely. `/health` reports `locked_out: true` and
+`consecutive_login_failures`. Nothing else breaks — `/prices` keeps serving
+the last cached data (marked `stale: true`), same as any other Commander
+outage.
+
+**To recover**, after rotating the password on the Commander console itself:
+
+```bash
+curl -X POST http://localhost:8200/config/credentials \
+  -H "Content-Type: application/json" \
+  -d '{"password": "the-new-password"}'
+# add -H "X-API-Key: ..." too if CONFIG_API_KEY is set
+
+# -> {"ok": true, "username": "MANAGER", "error": null}
+```
+
+This updates the running service immediately (no restart, no editing `.env`)
+and persists the new credentials to this service's own Docker volume so
+they survive a restart too. `username` is optional — omit it to keep the
+current one. The response's one validating login attempt still counts
+against the Commander's own limit, so double-check what you typed,
+especially if the unit is already close to its own lockout.
+
+**On password reuse:** if the Commander enforces a password-history policy
+(reject the last N passwords), that's very likely a PCI-DSS requirement on
+a payment-adjacent device, not an arbitrary Verifone limitation — this
+project doesn't attempt to work around it, and you shouldn't either. The
+practical fix for "I don't want to run out of memorable passwords" is to
+stop picking memorable ones: generate a fresh random password at each
+required rotation and hand it straight to the command above instead of
+retyping one you've used before.
 
 ## Known caveat: `GET /pumps` is unverified
 
@@ -135,7 +182,11 @@ API (which is the whole reason this project exists separately from
 `commander-console`), but it's still worth restricting at the network
 level (firewall / VLAN) rather than exposing the port to the open internet.
 If that's not sufficient, add an API-key middleware before deploying beyond
-a trusted LAN.
+a trusted LAN. `POST /config/credentials` (the one write endpoint — see
+"Login circuit breaker" above) is the exception: it can optionally require
+`CONFIG_API_KEY` on its own, independent of the rest of the API, since a
+credential-changing endpoint is worth locking down even on a LAN you
+otherwise trust for reads.
 
 ## Development (without Docker)
 

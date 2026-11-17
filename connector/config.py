@@ -25,6 +25,9 @@ class CommanderConfig:
     password: str
     timeout_seconds: int
     session_retry_attempts: int
+    # Circuit breaker — see commander_client.py's is_locked_out. Default 3
+    # is well under the Commander unit's own login-attempt lockout (~10).
+    lockout_threshold: int = 3
 
 
 @dataclass
@@ -91,6 +94,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         password=os.environ.get("COMMANDER_PASSWORD") or c.get("password", ""),
         timeout_seconds=int(c.get("timeout_seconds", 10)),
         session_retry_attempts=int(c.get("session_retry_attempts", 3)),
+        lockout_threshold=int(os.environ.get("COMMANDER_LOCKOUT_THRESHOLD") or c.get("lockout_threshold", 3)),
     )
 
     p = raw.get("polling", {})

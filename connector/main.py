@@ -28,11 +28,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import credentials_store
 from cache import PriceCache
 from commander_client import CommanderClient
 from config import load_config
 from mock_driver import MockDriver
 from naxml_parser import parse_fuel_prices
+from routers import credentials as credentials_router
 from routers import mock, prices, status, totals
 
 # ---------------------------------------------------------------------------
@@ -85,6 +87,8 @@ async def lifespan(app: FastAPI):
     config = load_config()
     app.state.config = config
     app.state.mock_mode = config.mock.enabled
+    # Guards POST /api/credentials only -- see routers/credentials.py.
+    app.state.config_api_key = os.environ.get("CONFIG_API_KEY") or None
 
     app.state.price_cache = PriceCache(
         ttl_seconds=config.polling.price_poll_interval_seconds
@@ -110,6 +114,7 @@ async def lifespan(app: FastAPI):
         )
 
         # Password can be set via env var for security
+        username = config.commander.username
         password = os.environ.get("COMMANDER_PASSWORD") or config.commander.password
         if not password:
             logger.warning(
@@ -117,14 +122,22 @@ async def lifespan(app: FastAPI):
                 "Set env var COMMANDER_PASSWORD or commander.yaml password field."
             )
 
+        # A previously saved credential update (POST /api/credentials) wins
+        # over commander.yaml/.env -- see credentials_store.py's docstring.
+        saved = credentials_store.load()
+        if saved:
+            username, password = saved
+            logger.info("Using saved Commander credentials override (user: %s)", username)
+
         client = CommanderClient(
             host=config.commander.host,
             port=config.commander.port,
-            username=config.commander.username,
+            username=username,
             password=password,
             verify_ssl=config.commander.verify_ssl,
             timeout=config.commander.timeout_seconds,
             retry_attempts=config.commander.session_retry_attempts,
+            lockout_threshold=config.commander.lockout_threshold,
         )
         app.state.commander_client = client
         app.state.mock_driver = None
@@ -206,6 +219,7 @@ app.include_router(status.router)
 app.include_router(prices.router)
 app.include_router(totals.router)
 app.include_router(mock.router)
+app.include_router(credentials_router.router)
 
 
 @app.get("/", include_in_schema=False)

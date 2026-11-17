@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import StatusBar from './components/StatusBar'
+import CredentialsPanel from './components/CredentialsPanel'
 import Dashboard from './components/Dashboard'
 import TotalsPanel from './components/TotalsPanel'
 import { fetchStatus } from './api/client'
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <div style={appStyles.root}>
       <StatusBar status={status} loading={statusLoading} />
+      <CredentialsPanel status={status} onStatusRefresh={loadStatus} />
 
       {/* Tab bar */}
       <div style={appStyles.tabBar}>

@@ -18,6 +18,15 @@ class Settings(BaseSettings):
 
     poll_interval_seconds: int = 60
     session_refresh_minutes: int = 25
+    # Circuit breaker — see commander_client.py's is_locked_out. Default 3 is
+    # well under the Commander unit's own login-attempt lockout (commonly ~10).
+    commander_lockout_threshold: int = 3
+    # Optional shared secret guarding POST /config/credentials specifically
+    # (the one write endpoint in an otherwise read-only, unauthenticated-by-
+    # design service — see README's "No authentication" section). Leave
+    # unset to match this service's existing LAN-trust model; set it if
+    # anything beyond a tightly firewalled LAN can reach this port.
+    config_api_key: str | None = None
 
     port: int = 8200
     log_level: str = "INFO"
